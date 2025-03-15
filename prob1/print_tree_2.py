@@ -3,7 +3,7 @@
 from enum import Enum
 
 
-debug = False
+debug = True
 
 class Mode(Enum) :
     NONE = 0
@@ -88,16 +88,20 @@ class Node:
         return count
         
     def print(self, pad) :
-        empty = ""
+
+        ch_tag = "["
         for i in range(len(self.children)) :
             if self.children[i] is None :
-                empty = empty + "."
+                ch_tag = ch_tag + "."
+            else :
+                ch_tag = ch_tag + "|"
+        ch_tag = ch_tag + "]"
 
         if self.parent is None :
             p_val = "root"
         else :
             p_val = str(self.parent.val)
-        print(f"{pad}{p_val}->{self.val}{empty}")
+        print(f"{pad}{p_val}->{self.val}:{ch_tag}")
         for i in range(len(self.children)) :
             if self.children[i] is not None :
                 self.children[i].print(pad)
@@ -135,6 +139,24 @@ class Node:
             if self.children[i] is not None :
                 right = self.children[i]
         return right
+
+
+    def rightmost_left_leaf(self) -> 'Node' :
+        if self.is_leaf() :
+            print(f"RMLL picked {self.val}")
+            return self
+        right = None
+        len_of_ch = len(self.children)
+        for i in range(len_of_ch - 1, -1, -1) :
+            if self.children[i] is not None and self.children[i].size() > 1  :
+                if debug : print(f"RMLL picking {self.val} {i} {len_of_ch}")
+                right = self.children[i].rightmost_left_leaf()
+                break
+
+        if right is None :
+            right = self.left_leaf()
+        return right
+        
 
     def leftmost(self) -> 'Node' :
         return self.children[0]
@@ -287,7 +309,7 @@ def find_next_node(t, trav) -> Mode :
         for i in range(max_index + 1, min_index + 1) :
             if debug : print(f"FIND_NEXT max {children_sizes[max_index]} size {children_sizes[i]} @ {i} for total {size}")
             if children_sizes[max_index] - children_sizes[i] > 1 :
-                if children_sizes[i] == 0 or max - children_sizes[i] < 2 :
+                if children_sizes[i] == 0 or max - children_sizes[i] < t.m - 1 :
                     mode = Mode.ROTATE_NEW_CH
                 else :
                     mode = Mode.ROTATE
@@ -297,7 +319,7 @@ def find_next_node(t, trav) -> Mode :
 
     if debug : print(f"NEXT mode {mode} size {size} diff {diff} M {t.m}")
     return mode
-    return t
+
 
 def unwind_right(t, node) :
     if debug : print(f"UNWIND {node.val}")
@@ -329,12 +351,12 @@ def move_nodes(t, mode, trav) :
 
     elif mode == Mode.ROTATE_NEW_CH :
 
-        left_leaf = trav.left_leaf()
-        prev_par = left_leaf.parent
+        leaf = trav.rightmost_left_leaf()
+        prev_par = leaf.parent
 
-        t.remove_from(prev_par, left_leaf)
+        t.remove_from(prev_par, leaf)
 
-        t.add_to(trav, left_leaf)
+        t.add_to(trav, leaf)
 
     elif mode == Mode.UP :
 
@@ -374,7 +396,7 @@ def permute_at(t, n) :
             break
         move_nodes(t, mode, n)
         t.print()
-        if t.count > 100 :
+        if t.count > 1000000 :
             print(f"STOPPING for overage {t.count}")
             break
 
@@ -386,6 +408,13 @@ def permute_at(t, n) :
 def permute_tree(t) -> Tree :
     t.print()
     permute_at(t, t.root)
+
+
+for i in range(3, 100) :
+    for j in range(2, 8) :
+        t = build_left_linear_tree(i, j)
+        permute_tree(t)
+        print(f"DONE COUNT: N:{i},M:{j} {t.count}")
 
 t = build_left_linear_tree(5, 3)
 permute_tree(t)
@@ -399,3 +428,29 @@ print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (10)")
 t = build_left_linear_tree(4, 3)
 permute_tree(t)
 print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (4)")
+
+t = build_left_linear_tree(30, 3)
+permute_tree(t)
+print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (338)")
+
+t = build_left_linear_tree(7, 5)
+permute_tree(t)
+print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (21)")
+
+t = build_left_linear_tree(8, 5)
+permute_tree(t)
+print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (29)")
+
+t = build_left_linear_tree(8, 6)
+permute_tree(t)
+print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (31)")
+
+#t = build_left_linear_tree(9, 7)
+#permute_tree(t)
+#print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (29)")
+
+#t = build_left_linear_tree(10, 8)
+#permute_tree(t)
+#print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (29)")
+
+
