@@ -43,16 +43,12 @@ class Node:
         n.parent = None
 
     def add_node(self, n) -> None :
-        prev = None
         for i in range(len(self.children)) :
             if self.children[i] is None :
                 n.parent = self
                 self.children[i] = n
                 if debug : print(f"placed {n.val} in par {self.val} at pos {i}")
-                if prev is not None :
-                    prev.right = n
                 break
-            prev = self.children[i]
 
     def tostring(self) -> str :
         return str(self.val)
@@ -141,18 +137,22 @@ class Node:
         return right
 
 
-    def rightmost_left_leaf(self) -> 'Node' :
+    def rightmost_left_leaf(self, left_of) -> 'Node' :
         if self.is_leaf() :
             print(f"RMLL picked {self.val}")
             return self
         right = None
         len_of_ch = len(self.children)
-        for i in range(len_of_ch - 1, -1, -1) :
-            if self.children[i] is not None and self.children[i].size() > 1  :
-                if debug : print(f"RMLL picking {self.val} {i} {len_of_ch}")
-                right = self.children[i].rightmost_left_leaf()
+        for i in range(left_of - 1, -1, -1) :
+            if self.children[i] is not None and self.children[i].size() > 1 :
+                if debug : print(f"RMLL picking {self.val} {i}")
+                right = self.children[i].rightmost_left_leaf(len_of_ch)
                 break
 
+        rval = "--"
+        if right is not None :
+            rval = str(right.val)
+        print(f"RMLL picked {rval}")
         if right is None :
             right = self.left_leaf()
         return right
@@ -185,6 +185,38 @@ class Node:
         return count
 
 
+    def children_sizes(self) :
+        count = 0
+        sizes = [] * len(self.children)
+        for i in range(len(self.children)) : 
+            if self.children[i] is not None :
+                sizes[i] = self.children[i].size()
+            else :
+                sizes[i] = 0
+        return sizes
+        
+
+
+    def find_leaf(self) -> int :
+        if self.is_leaf() :
+            return self
+
+        for i in range(len(self.children)) :
+            if self.children[i] is not None :
+                return self.children[i].find_leaf()
+        return None
+
+    def total_leaves(self) -> int :
+        if self.is_leaf() :
+            return 1
+
+        count = 0
+        for i in range(len(self.children)) :
+            if self.children[i] is not None :
+                count += self.children[i].total_leaves()
+        return count
+
+
     #
     # The number of subnodes in each of the children
     #
@@ -197,6 +229,15 @@ class Node:
             else :
                 counts[i] = 0
         return counts
+
+
+    def gather_children(self) -> ['Node'] :
+        child_container = []
+        for i in range(len(self.children)) : 
+            if self.children[i] is not None :
+                child_container.append(self.children[i])
+
+        return child_container
         
 
 class Tree:
@@ -267,61 +308,101 @@ def build_left_linear_tree(n, m) -> Tree :
     return t
 
 
-def find_next_node(t, trav) -> Mode :
+class LevelContext :
+    def __init__(self) :
+        self.left_fill = 0
+        self.right_fill = 1
+        self.mode = Mode.ROTATE_NEW_CH
+        self.trav = None
+        self.rotate_from = -1
+        self.rotate_to = -1
+        # Used for validation if debugging
+        self.labels = {}
+
+    def can_continue(self) -> bool :
+        if self.mode is Mode.UP :
+            return False
+        if self.mode is Mode.NONE :
+            return False
+        return True
+
+# Add to new child from child pool with in the sub tree and reset all nodes to linear left tree
+# rotate nodes in new rank until full, at or close to level
+# if any child has more than 1 node and there is a free slot, repeat
+
+def find_next_node(t, ctx) -> Mode :
+
+    trav = ctx.trav
 
     tv = "--"
     if trav is not None :
         tv = str(trav.val)
     if debug : print(f"FIND_NEXT  {tv}")
 
+
     size = -1 
     diff = -1
-    mode = Mode.NONE
+    sizes = trav.children_sizes()
 
-    #
-    # To know to move a node, look at the children sizes
-    #
-    children_sizes = trav.children_sizes()
+    if ctx.mode is Mode.ROTATE_NEW_CH :
+        ctx.mode = Mode.ROTATE
+        ctx.rotate_from = 0
+        ctx.rotate_to = 1
+
+    left = ctx.left_fill
+    right = ctx.right_fill
+
     size = 0
+
     max = 0
-    min = t.n
     max_index = -1
+
+    min = t.n
     min_index = -1
-    for i in range(len(children_sizes)) :
-        size += children_sizes[i]
-        if children_sizes[i] < min :
-            min = children_sizes[i]
+
+    for i in range(left, right) :
+        size += sizes[i]
+        if sizes[i] < min :
+            min = sizes[i]
             min_index = i
-        if children_sizes[i] > max :
-            max = children_sizes[i]
+        #
+        # The last max, not the first max
+        #
+        if sizes[i] >= max :
+            max = sizes[i]
             max_index = i
 
-    diff = max - min
 
-    if debug : print(f"CAN MOVE check diff {diff} max {max} @ {max_index} min {min} @ {min_index}")
-    if diff == 0 :
-        if debug : print("LEVEL")
-        mode = Mode.UP
+    if size < 3 :
+        ctx.mode = Mode.UP
+        
+    if debug :
+        size_str = ".".join([str(i) for i in sizes])
+        print(f"ROTATE rotation {trav.val} from {ctx.left_fill} to {ctx.right_fill} with sizes {size_str}")
+
+    while sizes[ctx.rotate_from] - sizes[ctx.rotate_to] <= 1 :
+        ctx.rotate_to += 1
+        if ctx.rotate_to >= ctx.right_fill :
+            break
+
+    if ctx.rotate_to < ctx.right_fill :
+        if debug : print(f"ROTATE node {trav.val} from {ctx.rotate_from} size {sizes[ctx.rotate_from]} to {ctx.rotate_to} size {sizes[ctx.rotate_to]}")
+        return ctx.mode
     else :
-        #
-        # Skip max, and up to the index
-        #
-        for i in range(max_index + 1, min_index + 1) :
-            if debug : print(f"FIND_NEXT max {children_sizes[max_index]} size {children_sizes[i]} @ {i} for total {size}")
-            if children_sizes[max_index] - children_sizes[i] > 1 :
-                if children_sizes[i] == 0 or max - children_sizes[i] < t.m - 1 :
-                    mode = Mode.ROTATE_NEW_CH
-                else :
-                    mode = Mode.ROTATE
-                break
-            else :
-                mode = Mode.UP
-
-    if debug : print(f"NEXT mode {mode} size {size} diff {diff} M {t.m}")
-    return mode
+        ctx.rotate_from = -1
+        ctx.rotate_to = -1
 
 
-def unwind_right(t, node) :
+    ctx.mode = Mode.ROTATE_NEW_CH
+    if right == t.m or right >= size:
+        ctx.mode = Mode.NONE
+
+    if debug : print(f"NEXT mode {ctx.mode} left {left} right {right} size {size} M {t.m}")
+
+    return ctx.mode
+
+
+def unwind_at_node(t, node) :
     if debug : print(f"UNWIND {node.val}")
 
     right_ch = node.rightmost()
@@ -336,31 +417,79 @@ def unwind_right(t, node) :
     if debug : print("UNWIND DONE")
 
 
-def move_nodes(t, mode, trav) :
+def move_nodes(t, ctx) :
+
+    trav = ctx.trav
+    mode = ctx.mode
 
     if debug : print(f"MOVE {mode} {trav.val}")
 
     if mode == Mode.ROTATE :
 
-        left_leaf = trav.left_leaf()
+
+        if debug : print(f"ROTATE node {trav.val} from {ctx.rotate_from} to {ctx.rotate_to}")
+
+        left_leaf = trav.children[ctx.rotate_from].rightmost_left_leaf(ctx.right_fill)
         prev_par = left_leaf.parent
         t.remove_from(prev_par, left_leaf)
 
-        right_leaf = trav.right_leaf()
+        if trav.children[ctx.rotate_to] is None :
+            right_leaf = trav
+        else :
+            right_leaf = trav.children[ctx.rotate_to].find_leaf()
+
+        rlval = "--"
+        if right_leaf is not None :
+            rlval = str(right_leaf.val)
+        if debug : print(f"ROTATE picked {rlval} for {left_leaf.val}")
+
         t.add_to(right_leaf, left_leaf)
 
     elif mode == Mode.ROTATE_NEW_CH :
 
-        leaf = trav.rightmost_left_leaf()
-        prev_par = leaf.parent
 
-        t.remove_from(prev_par, leaf)
+        par = None
+        leaf = None
 
-        t.add_to(trav, leaf)
+        if ctx.right_fill > 1 :
+            for i in range(ctx.right_fill - 1, ctx.left_fill - 1, -1) :
+                if trav.children[i].size() > 1 :
+                    leaf = trav.children[i].find_leaf()
+        else :
+            leaf = trav.left_leaf()
+
+        if leaf is not None  :
+            par = leaf.parent
+            t.remove_from(par, leaf)
+
+            t.add_to(trav, leaf)
+            ctx.right_fill += 1
+
+
+            if debug : print(f"Rebalancing")
+
+            #
+            # Restart filling and balancing
+            #
+            ch_len = len(trav.children)
+            left_leaf = trav.left_leaf()
+
+            #
+            # Skip the far left
+            #
+            for i in range(ch_len - 1, 0, -1) :
+                if trav.children[i] is not None :
+                    fill = trav.children[i].gather_children()
+                    if debug : print(f"Rebalancing child {trav.children[i].val} found {len(fill)}")
+                    for j in range(len(fill)) :
+                        t.remove_from(fill[j].parent, fill[j])
+                    for j in range(len(fill)) :
+                        t.add_to(left_leaf, fill[j])
+                        left_leaf = fill[j].find_leaf()
 
     elif mode == Mode.UP :
 
-        unwind_right(t, trav)
+        unwind_at_node(t, trav)
 
         parent = trav.parent
 
@@ -387,20 +516,44 @@ def permute_at(t, n) :
     if not n.is_leaf() :
         for i in range(len(n.children)) :
             permute_at(t, n.children[i])
+
     
-    while True :
-        mode = find_next_node(t, n)
-        if mode is Mode.UP or mode is Mode.NONE :
-            break
-        if mode is None :
-            break
-        move_nodes(t, mode, n)
+    ctx = LevelContext()
+    ctx.trav = n
+    ctx.mode = Mode.ROTATE_NEW_CH
+    ctx.left_fill = 0
+    ctx.right_fill = 1
+    ctx.rotate_from = -1
+    ctx.rotate_to = -1
+    ctx.labels = {}
+
+    while ctx.can_continue() :
+        move_nodes(t, ctx)
         t.print()
-        if t.count > 1000000 :
+        if debug :
+            # 
+            # check for in-correct number of children
+            #
+            if ctx.trav.total_leaves() > t.m :
+                raise ValueError(f"Total leaves exceeded {ctx.trav.val}")
+
+            #
+            # Check for a previously seen configuration within this layer of the tree
+            #
+            sizes = ctx.trav.children_sizes()
+            sizes = sorted(sizes)
+            label = ".".join([str(i) for i in sizes])
+            print(f"LABEL @ {t.count} : {label}")
+            if label in ctx.labels :
+                raise ValueError(f"Seen before {label} for {ctx.trav.val}")
+            ctx.labels[label] = 1
+        
+        find_next_node(t, ctx)
+        if t.count > 10000 :
             print(f"STOPPING for overage {t.count}")
             break
 
-    unwind_right(t, n)
+    unwind_at_node(t, n)
     if debug : print(f"PERMUTE DONE @ {n.val}")
 
     
@@ -410,16 +563,12 @@ def permute_tree(t) -> Tree :
     permute_at(t, t.root)
 
 
-for i in range(3, 100) :
-    for j in range(2, 8) :
-        t = build_left_linear_tree(i, j)
-        permute_tree(t)
-        print(f"DONE COUNT: N:{i},M:{j} {t.count}")
-
-t = build_left_linear_tree(5, 3)
-permute_tree(t)
-print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (7)")
-
+if True :
+    for i in range(5, 100) :
+        for j in range(4, 10) :
+            t = build_left_linear_tree(i, j)
+            permute_tree(t)
+            print(f"DONE COUNT: N:{i},M:{j} {t.count}")
 
 t = build_left_linear_tree(7, 2)
 permute_tree(t)
@@ -429,28 +578,60 @@ t = build_left_linear_tree(4, 3)
 permute_tree(t)
 print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (4)")
 
+t = build_left_linear_tree(5, 3)
+permute_tree(t)
+print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (7)")
+
+t = build_left_linear_tree(6, 3)
+permute_tree(t)
+print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (11)")
+
+t = build_left_linear_tree(7, 3)
+permute_tree(t)
+print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (17)")
+
+t = build_left_linear_tree(8, 3)
+permute_tree(t)
+print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (23)")
+
 t = build_left_linear_tree(30, 3)
 permute_tree(t)
-print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (338)")
+print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (491)")
 
-t = build_left_linear_tree(7, 5)
+t = build_left_linear_tree(6, 4)
+permute_tree(t)
+print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (13)")
+
+t = build_left_linear_tree(7, 4)
 permute_tree(t)
 print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (21)")
 
-t = build_left_linear_tree(8, 5)
-permute_tree(t)
-print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (29)")
-
-t = build_left_linear_tree(8, 6)
+t = build_left_linear_tree(8, 4)
 permute_tree(t)
 print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (31)")
 
-#t = build_left_linear_tree(9, 7)
-#permute_tree(t)
-#print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (29)")
+t = build_left_linear_tree(9, 4)
+permute_tree(t)
+print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (43)")
 
-#t = build_left_linear_tree(10, 8)
-#permute_tree(t)
-#print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (29)")
+t = build_left_linear_tree(7, 5)
+permute_tree(t)
+print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (23)")
+
+t = build_left_linear_tree(8, 5)
+permute_tree(t)
+print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (35)")
+
+t = build_left_linear_tree(8, 6)
+permute_tree(t)
+print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (37)")
+
+t = build_left_linear_tree(9, 7)
+permute_tree(t)
+print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (56)")
+
+t = build_left_linear_tree(10, 8)
+permute_tree(t)
+print(f"DONE COUNT: N:{t.n},M:{t.m} {t.count} (81)")
 
 
